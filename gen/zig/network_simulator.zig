@@ -213,9 +213,13 @@ fn inject_fault(fault_type: u32, target_id: u32, node_states: [MAX_NODES]u32) u3
     var states: [MAX_NODES]u32 = node_states;
     _ = &states;
     if (fault_type == EVENT_NODE_FAILURE) {
-        const current_state: u32 = states[target_id];
-        states[target_id] = update_node_status(current_state, NODE_FAILED);
-        return 1;
+        if (target_id < MAX_NODES) {
+            const current_state: u32 = states[target_id];
+            states[target_id] = update_node_status(current_state, NODE_FAILED);
+            return 1;
+        } else {
+            return 0;
+        }
     } else if (fault_type == EVENT_LINK_FAILURE) {
         return 1;
     } else {
@@ -259,4 +263,10 @@ test "energy_drain_fails_node" {
     st = update_node_energy(st, 100);
     if (!(get_node_energy(st) == 0)) @panic("clamps at zero");
     if (!(get_node_status(st) == NODE_FAILED)) @panic("empty battery fails the node");
+}
+test "inject_fault_rejects_out_of_range_target" {
+    const states: [32]u32 = .{ 0 } ** 32;
+    if (!(inject_fault(EVENT_NODE_FAILURE, 31, states) == 1)) @panic("last node");
+    if (!(inject_fault(EVENT_NODE_FAILURE, 32, states) == 0)) @panic("first id past the array");
+    if (!(inject_fault(EVENT_NODE_FAILURE, 4294967295, states) == 0)) @panic("largest id");
 }

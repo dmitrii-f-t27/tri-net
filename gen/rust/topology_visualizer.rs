@@ -209,12 +209,16 @@ pub fn calculate_force_layout(
 
 pub fn calculate_circular_layout(nodes: [u32; MAX_NODES as usize], node_count: u32) -> u32 {
     let mut vnodes: [u32; MAX_NODES as usize] = nodes;
+    let mut count: u32 = node_count;
+    if (count > MAX_NODES) {
+        count = MAX_NODES;
+    }
     let center_x: u32 = (CANVAS_SIZE / 2);
     let center_y: u32 = (CANVAS_SIZE / 2);
     let radius: u32 = (CANVAS_SIZE / 3);
     let mut i: u32 = 0;
-    while (i < node_count) {
-        let angle: u32 = ((i * 360) / node_count);
+    while (i < count) {
+        let angle: u32 = ((i * 360) / count);
         let x: u32 = (center_x + ((radius * angle) / 360));
         let y: u32 = (center_y + ((radius * angle) / 360));
         let node_id: u32 = get_viz_node_id(vnodes[(i) as usize]);
@@ -222,7 +226,7 @@ pub fn calculate_circular_layout(nodes: [u32; MAX_NODES as usize], node_count: u
         vnodes[(i) as usize] = create_visual_node(node_id, x, y, status);
         i = (i + 1);
     }
-    return node_count;
+    return count;
 }
 
 pub fn calculate_hierarchical_layout(
@@ -232,12 +236,19 @@ pub fn calculate_hierarchical_layout(
     edge_count: u32,
 ) -> u32 {
     let mut vnodes: [u32; MAX_NODES as usize] = nodes;
+    let mut count: u32 = node_count;
+    if (count > MAX_NODES) {
+        count = MAX_NODES;
+    }
     let level_count: u32 = 4;
-    let nodes_per_level: u32 = (node_count / level_count);
+    let mut nodes_per_level: u32 = (count / level_count);
+    if (nodes_per_level == 0) {
+        nodes_per_level = 1;
+    }
     let mut i: u32 = 0;
     let mut current_level: u32 = 0;
     let mut nodes_in_level: u32 = 0;
-    while (i < node_count) {
+    while (i < count) {
         let y: u32 = ((current_level * CANVAS_SIZE) / level_count);
         let x: u32 = ((nodes_in_level * CANVAS_SIZE) / nodes_per_level);
         let node_id: u32 = get_viz_node_id(vnodes[(i) as usize]);
@@ -250,7 +261,7 @@ pub fn calculate_hierarchical_layout(
         }
         i = (i + 1);
     }
-    return node_count;
+    return count;
 }
 
 pub fn apply_layout(

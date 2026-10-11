@@ -319,9 +319,13 @@ uint32_t create_topology(uint32_t node_count, uint32_t density) {
 uint32_t inject_fault(uint32_t fault_type, uint32_t target_id, t27_arr_uint32_t_32 node_states) {
     t27_arr_uint32_t_32 states = node_states;
     if ((fault_type == EVENT_NODE_FAILURE)) {
-        uint32_t current_state = states.v[target_id];
-        states.v[target_id] = update_node_status(current_state, NODE_FAILED);
-        return 1;
+        if ((target_id < MAX_NODES)) {
+            uint32_t current_state = states.v[target_id];
+            states.v[target_id] = update_node_status(current_state, NODE_FAILED);
+            return 1;
+        } else {
+            return 0;
+        }
     } else if ((fault_type == EVENT_LINK_FAILURE)) {
         return 1;
     } else {
@@ -375,6 +379,13 @@ void test_energy_drain_fails_node(void) {
     t27_assert((get_node_status(st) == NODE_FAILED), "empty battery fails the node");
 }
 
+void test_inject_fault_rejects_out_of_range_target(void) {
+    t27_arr_uint32_t_32 states = { .v = { [0 ... (32) - 1] = 0 } };
+    t27_assert((inject_fault(EVENT_NODE_FAILURE, 31, states) == 1), "last node");
+    t27_assert((inject_fault(EVENT_NODE_FAILURE, 32, states) == 0), "first id past the array");
+    t27_assert((inject_fault(EVENT_NODE_FAILURE, 4294967295, states) == 0), "largest id");
+}
+
 
 /* -------------------------------------------------------
    Test runner (compile with -DT27_TEST_MAIN to execute)
@@ -385,7 +396,8 @@ void test_energy_drain_fails_node(void) {
 int main(void) {
     test_sim_event_roundtrip();
     test_energy_drain_fails_node();
-    printf("All %d tests passed.\n", 2);
+    test_inject_fault_rejects_out_of_range_target();
+    printf("All %d tests passed.\n", 3);
     return 0;
 }
 #endif /* T27_TEST_MAIN */

@@ -276,10 +276,14 @@ pub fn update_animation_packets(
     speed: u32,
 ) -> u32 {
     let mut pkts: [u32; MAX_PACKETS as usize] = packets;
+    let mut count: u32 = packet_count;
+    if (count > MAX_PACKETS) {
+        count = MAX_PACKETS;
+    }
     let mut updated_count: u32 = 0;
     let mut completed_count: u32 = 0;
     let mut i: u32 = 0;
-    while (i < packet_count) {
+    while (i < count) {
         let progress: u32 = get_anim_packet_progress(pkts[(i) as usize]);
         if (progress < 100) {
             let mut new_progress: u32 = (progress + speed);
@@ -297,7 +301,7 @@ pub fn update_animation_packets(
         i = (i + 1);
     }
     return ((((updated_count & 0xFF) << 24) | ((completed_count & 0xFF) << 16))
-        | ((packet_count & 0xFF) << 8));
+        | ((count & 0xFF) << 8));
 }
 
 pub fn render_animation_frame(

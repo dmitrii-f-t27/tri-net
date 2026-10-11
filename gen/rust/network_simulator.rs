@@ -280,9 +280,13 @@ pub fn inject_fault(
 ) -> u32 {
     let mut states: [u32; MAX_NODES as usize] = node_states;
     if (fault_type == EVENT_NODE_FAILURE) {
-        let current_state: u32 = states[(target_id) as usize];
-        states[(target_id) as usize] = update_node_status(current_state, NODE_FAILED);
-        return 1;
+        if (target_id < MAX_NODES) {
+            let current_state: u32 = states[(target_id) as usize];
+            states[(target_id) as usize] = update_node_status(current_state, NODE_FAILED);
+            return 1;
+        } else {
+            return 0;
+        }
     } else {
         if (fault_type == EVENT_LINK_FAILURE) {
             return 1;

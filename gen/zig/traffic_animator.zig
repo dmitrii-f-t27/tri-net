@@ -198,13 +198,18 @@ fn calculate_packet_position(source_x: u32, source_y: u32, dest_x: u32, dest_y: 
 fn update_animation_packets(packets: [MAX_PACKETS]u32, packet_count: u32, speed: u32) u32 {
     var pkts: [MAX_PACKETS]u32 = packets;
     _ = &pkts;
+    var count: u32 = packet_count;
+    _ = &count;
+    if (count > MAX_PACKETS) {
+        count = MAX_PACKETS;
+    }
     var updated_count: u32 = 0;
     _ = &updated_count;
     var completed_count: u32 = 0;
     _ = &completed_count;
     var i: u32 = 0;
     _ = &i;
-    while (i < packet_count) {
+    while (i < count) {
         const progress: u32 = get_anim_packet_progress(pkts[i]);
         if (progress < 100) {
             var new_progress: u32 = progress + speed;
@@ -222,7 +227,7 @@ fn update_animation_packets(packets: [MAX_PACKETS]u32, packet_count: u32, speed:
         }
         i = i + 1;
     }
-    return (((updated_count & 0xFF) << 24) | ((completed_count & 0xFF) << 16)) | ((packet_count & 0xFF) << 8);
+    return (((updated_count & 0xFF) << 24) | ((completed_count & 0xFF) << 16)) | ((count & 0xFF) << 8);
 }
 fn render_animation_frame(packets: [MAX_PACKETS]u32, packet_count: u32, paths: [MAX_PATHS]u32, path_count: u32, frame_id: u32) u32 {
     _ = packets; // unused by the spec body
@@ -355,4 +360,13 @@ test "packet_position_interpolates_both_directions" {
     pos = calculate_packet_position(90, 20, 10, 20, 50);
     if (!(((pos >> 24) & 0xFF) == 50)) @panic("x midpoint leftward");
     if (!(((pos >> 16) & 0xFF) == 20)) @panic("y unchanged");
+}
+test "update_animation_packets_clamps_count" {
+    const pkts: [64]u32 = .{ 0 } ** 64;
+    const r64 = update_animation_packets(pkts, 64, 10);
+    if (!(r64 == ((64 << 24) | (64 << 8)))) @panic("full array");
+    const r65 = update_animation_packets(pkts, 65, 10);
+    if (!(r65 == r64)) @panic("65 is clamped to 64");
+    const rmax = update_animation_packets(pkts, 4294967295, 10);
+    if (!(rmax == r64)) @panic("largest count is clamped to 64");
 }

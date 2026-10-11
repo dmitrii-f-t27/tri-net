@@ -398,3 +398,7 @@ path = "tests/gen_rust_corpus_compiles.rs"
 [[test]]
 name = "gen_rust_value_params"
 path = "tests/gen_rust_value_params.rs"
+
+[[test]]
+name = "gen_rust_bounds"
+path = "tests/gen_rust_bounds.rs"
