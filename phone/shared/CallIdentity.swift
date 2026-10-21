@@ -117,6 +117,9 @@ struct InternetCallConfiguration: Equatable {
 
         let bundledAPIBaseURL = bundle.object(forInfoDictionaryKey: "TRINET_API_BASE_URL") as? String ?? ""
         let savedAPIBaseURL = defaults.string(forKey: "internetAPIBaseURL")
+        // Bind a token saved before origins were recorded to the address it
+        // was saved with, before that address may be rewritten below.
+        migrateLegacyAccessToken(defaults: defaults, savedAPIBaseURL: savedAPIBaseURL)
         let apiBaseURL = preferredAPIBaseURL(saved: savedAPIBaseURL, bundled: bundledAPIBaseURL)
         if let savedAPIBaseURL,
            !savedAPIBaseURL.isEmpty,
@@ -144,23 +147,42 @@ struct InternetCallConfiguration: Equatable {
         return "\(scheme)://\(host)"
     }
 
+    /// Service access tokens by origin (`scheme://host[:port]`).
+    static let accessTokensKey = "serviceAccessTokens"
+
+    static func storedAccessTokens(_ defaults: UserDefaults) -> [String: String] {
+        defaults.dictionary(forKey: accessTokensKey) as? [String: String] ?? [:]
+    }
+
+    /// Moves a single token saved by an older build into the per-origin store,
+    /// bound to the origin recorded with it or else the address saved with it,
+    /// then removes the old keys. A token without any address stays where it
+    /// is and is never sent.
+    static func migrateLegacyAccessToken(defaults: UserDefaults, savedAPIBaseURL: String?) {
+        guard let legacy = defaults.string(forKey: "serviceAccessToken") else { return }
+        let legacyOrigin = defaults.string(forKey: "serviceAccessTokenOrigin")
+            ?? origin(of: savedAPIBaseURL ?? "")
+        if !legacy.isEmpty {
+            guard let legacyOrigin else { return }
+            var tokens = storedAccessTokens(defaults)
+            if tokens[legacyOrigin] == nil {
+                tokens[legacyOrigin] = legacy
+            }
+            defaults.set(tokens, forKey: accessTokensKey)
+        }
+        defaults.removeObject(forKey: "serviceAccessToken")
+        defaults.removeObject(forKey: "serviceAccessTokenOrigin")
+    }
+
     /// A service access token is sent only to the origin it was saved or
     /// bundled for, so switching servers never carries it to another host,
-    /// also after a restart. A token saved before origins were recorded was
-    /// saved together with its address by `save()`; it is bound to that
-    /// address once.
+    /// also after a restart.
     static func scopedAccessToken(apiBaseURL: String,
                                   defaults: UserDefaults,
                                   bundle: Bundle) -> String {
         guard let activeOrigin = origin(of: apiBaseURL) else { return "" }
-        if let saved = defaults.string(forKey: "serviceAccessToken"), !saved.isEmpty {
-            var savedOrigin = defaults.string(forKey: "serviceAccessTokenOrigin")
-            if savedOrigin == nil,
-               let legacyOrigin = origin(of: defaults.string(forKey: "internetAPIBaseURL") ?? "") {
-                defaults.set(legacyOrigin, forKey: "serviceAccessTokenOrigin")
-                savedOrigin = legacyOrigin
-            }
-            if savedOrigin == activeOrigin { return saved }
+        if let saved = storedAccessTokens(defaults)[activeOrigin], !saved.isEmpty {
+            return saved
         }
         let bundledToken = bundle.object(forInfoDictionaryKey: "TRINET_SERVICE_ACCESS_TOKEN") as? String ?? ""
         let bundledBase = bundle.object(forInfoDictionaryKey: "TRINET_API_BASE_URL") as? String ?? ""
@@ -168,6 +190,20 @@ struct InternetCallConfiguration: Equatable {
             return bundledToken
         }
         return ""
+    }
+
+    /// True when `token` is a credential of a different origin, for example
+    /// the previous server's token still in a settings form after only the
+    /// address was edited.
+    static func tokenBelongsToAnotherOrigin(_ token: String,
+                                            target: String,
+                                            tokens: [String: String],
+                                            bundle: Bundle) -> Bool {
+        if tokens[target] == token { return false }
+        if tokens.contains(where: { $0.key != target && $0.value == token }) { return true }
+        let bundledToken = bundle.object(forInfoDictionaryKey: "TRINET_SERVICE_ACCESS_TOKEN") as? String ?? ""
+        let bundledBase = bundle.object(forInfoDictionaryKey: "TRINET_API_BASE_URL") as? String ?? ""
+        return !bundledToken.isEmpty && token == bundledToken && origin(of: bundledBase) != target
     }
 
     static func preferredAPIBaseURL(saved: String?, bundled: String) -> String {
@@ -193,16 +229,26 @@ struct InternetCallConfiguration: Equatable {
             (octets[0] == 100 && (64...127).contains(octets[1]))
     }
 
-    func save(defaults: UserDefaults = .standard) {
+    /// Saves the address and LiveKit settings, and the token for this
+    /// address's origin only. A token that belongs to another origin (an
+    /// address-only edit) is not stored for this one, an empty token clears
+    /// only this origin, and other origins' tokens are kept. Callers reload
+    /// with `load()` so the in-memory configuration carries the scoped token.
+    func save(defaults: UserDefaults = .standard, bundle: Bundle = .main) {
+        Self.migrateLegacyAccessToken(defaults: defaults,
+                                      savedAPIBaseURL: defaults.string(forKey: "internetAPIBaseURL"))
         defaults.set(apiBaseURL, forKey: "internetAPIBaseURL")
         defaults.set(liveKitURL, forKey: "liveKitURL")
-        defaults.set(accessToken, forKey: "serviceAccessToken")
-        if accessToken.isEmpty {
-            defaults.removeObject(forKey: "serviceAccessTokenOrigin")
-        } else {
-            defaults.set(Self.origin(of: apiBaseURL), forKey: "serviceAccessTokenOrigin")
-        }
         defaults.set(developmentRoomToken, forKey: "developmentRoomToken")
+        guard let target = Self.origin(of: apiBaseURL) else { return }
+        var tokens = Self.storedAccessTokens(defaults)
+        let token = accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        if token.isEmpty {
+            tokens.removeValue(forKey: target)
+        } else if !Self.tokenBelongsToAnotherOrigin(token, target: target, tokens: tokens, bundle: bundle) {
+            tokens[target] = token
+        }
+        defaults.set(tokens, forKey: Self.accessTokensKey)
     }
 
     var isDevelopmentDirect: Bool {
