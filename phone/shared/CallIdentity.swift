@@ -127,9 +127,47 @@ struct InternetCallConfiguration: Equatable {
         return InternetCallConfiguration(
             apiBaseURL: apiBaseURL,
             liveKitURL: value("liveKitURL", "TRINET_LIVEKIT_URL"),
-            accessToken: value("serviceAccessToken", "TRINET_SERVICE_ACCESS_TOKEN"),
+            accessToken: scopedAccessToken(apiBaseURL: apiBaseURL, defaults: defaults, bundle: bundle),
             developmentRoomToken: value("developmentRoomToken", "TRINET_DEVELOPMENT_ROOM_TOKEN")
         )
+    }
+
+    /// `scheme://host[:port]`, lowercased; nil when the address has no host.
+    static func origin(of address: String) -> String? {
+        guard let components = URLComponents(string: address.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = components.scheme?.lowercased(),
+              let host = components.host?.lowercased(),
+              !host.isEmpty else { return nil }
+        if let port = components.port {
+            return "\(scheme)://\(host):\(port)"
+        }
+        return "\(scheme)://\(host)"
+    }
+
+    /// A service access token is sent only to the origin it was saved or
+    /// bundled for, so switching servers never carries it to another host,
+    /// also after a restart. A token saved before origins were recorded was
+    /// saved together with its address by `save()`; it is bound to that
+    /// address once.
+    static func scopedAccessToken(apiBaseURL: String,
+                                  defaults: UserDefaults,
+                                  bundle: Bundle) -> String {
+        guard let activeOrigin = origin(of: apiBaseURL) else { return "" }
+        if let saved = defaults.string(forKey: "serviceAccessToken"), !saved.isEmpty {
+            var savedOrigin = defaults.string(forKey: "serviceAccessTokenOrigin")
+            if savedOrigin == nil,
+               let legacyOrigin = origin(of: defaults.string(forKey: "internetAPIBaseURL") ?? "") {
+                defaults.set(legacyOrigin, forKey: "serviceAccessTokenOrigin")
+                savedOrigin = legacyOrigin
+            }
+            if savedOrigin == activeOrigin { return saved }
+        }
+        let bundledToken = bundle.object(forInfoDictionaryKey: "TRINET_SERVICE_ACCESS_TOKEN") as? String ?? ""
+        let bundledBase = bundle.object(forInfoDictionaryKey: "TRINET_API_BASE_URL") as? String ?? ""
+        if !bundledToken.isEmpty, origin(of: bundledBase) == activeOrigin {
+            return bundledToken
+        }
+        return ""
     }
 
     static func preferredAPIBaseURL(saved: String?, bundled: String) -> String {
@@ -159,6 +197,11 @@ struct InternetCallConfiguration: Equatable {
         defaults.set(apiBaseURL, forKey: "internetAPIBaseURL")
         defaults.set(liveKitURL, forKey: "liveKitURL")
         defaults.set(accessToken, forKey: "serviceAccessToken")
+        if accessToken.isEmpty {
+            defaults.removeObject(forKey: "serviceAccessTokenOrigin")
+        } else {
+            defaults.set(Self.origin(of: apiBaseURL), forKey: "serviceAccessTokenOrigin")
+        }
         defaults.set(developmentRoomToken, forKey: "developmentRoomToken")
     }
 
