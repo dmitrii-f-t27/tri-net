@@ -119,6 +119,36 @@ do {
     let loaded = InternetCallConfiguration.load(defaults: defaults, bundle: bundled)
     check(loaded.authorizationHeader == nil, "legacy without address: not sent to the bundled server")
     check(InternetCallConfiguration.storedAccessTokens(defaults).isEmpty, "legacy without address: not bound")
+    check(defaults.string(forKey: "serviceAccessToken") == nil, "legacy without address: deleted")
+}
+
+// 5b. The same originless legacy token, then a new address saved in
+//     Settings and a restart: the token never reaches the new host.
+do {
+    let defaults = freshDefaults()
+    defaults.set("old-sentinel-3c1d", forKey: "serviceAccessToken")
+    let first = InternetCallConfiguration.load(defaults: defaults, bundle: empty)
+    check(first.authorizationHeader == nil, "originless legacy: first load sends nothing")
+    var form = first
+    form.apiBaseURL = serverB
+    form.save(defaults: defaults, bundle: empty)
+    let reloaded = InternetCallConfiguration.load(defaults: defaults, bundle: empty)
+    check(reloaded.apiBaseURL == serverB, "originless legacy: new address saved")
+    check(reloaded.authorizationHeader == nil, "originless legacy: no Authorization to the new address")
+    check(!InternetCallConfiguration.storedAccessTokens(defaults).values.contains("old-sentinel-3c1d"),
+          "originless legacy: token not stored for any origin")
+    check(defaults.string(forKey: "serviceAccessToken") == nil, "originless legacy: legacy key deleted")
+}
+
+// 5c. Save before any load (the first thing a build does is save): the
+//     originless legacy token is still not adopted by the saved address.
+do {
+    let defaults = freshDefaults()
+    defaults.set("old-sentinel-3c1d", forKey: "serviceAccessToken")
+    InternetCallConfiguration(apiBaseURL: serverB, liveKitURL: "", accessToken: "", developmentRoomToken: "")
+        .save(defaults: defaults, bundle: empty)
+    check(InternetCallConfiguration.load(defaults: defaults, bundle: empty).authorizationHeader == nil,
+          "originless legacy, save first: no Authorization to the saved address")
 }
 
 // 6. A bundled token is sent only to the bundled origin, and an address-only

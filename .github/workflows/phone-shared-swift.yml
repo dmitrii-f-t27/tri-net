@@ -1,7 +1,7 @@
 name: phone shared Swift
 on:
   push:
-    branches: [main]
+    branches: [main, 'negctl/**']
     paths: ['phone/shared/**', '.github/workflows/phone-shared-swift.yml']
   pull_request:
     paths: ['phone/shared/**', '.github/workflows/phone-shared-swift.yml']
