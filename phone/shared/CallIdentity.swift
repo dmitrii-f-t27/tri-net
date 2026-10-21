@@ -231,12 +231,15 @@ struct InternetCallConfiguration: Equatable {
 
     /// Saves the address and LiveKit settings, and the token for this
     /// address's origin only. A token that belongs to another origin (an
-    /// address-only edit) is not stored for this one, an empty token clears
-    /// only this origin, and other origins' tokens are kept. Callers reload
-    /// with `load()` so the in-memory configuration carries the scoped token.
+    /// address-only edit) is not stored for this one; an empty token clears
+    /// this origin's token only when the address stays on this origin, so an
+    /// address-only edit neither moves nor deletes a token; other origins'
+    /// tokens are kept. Callers reload with `load()` so the in-memory
+    /// configuration carries the scoped token.
     func save(defaults: UserDefaults = .standard, bundle: Bundle = .main) {
-        Self.migrateLegacyAccessToken(defaults: defaults,
-                                      savedAPIBaseURL: defaults.string(forKey: "internetAPIBaseURL"))
+        let previousAPIBaseURL = defaults.string(forKey: "internetAPIBaseURL")
+        Self.migrateLegacyAccessToken(defaults: defaults, savedAPIBaseURL: previousAPIBaseURL)
+        let previousOrigin = Self.origin(of: previousAPIBaseURL ?? "")
         defaults.set(apiBaseURL, forKey: "internetAPIBaseURL")
         defaults.set(liveKitURL, forKey: "liveKitURL")
         defaults.set(developmentRoomToken, forKey: "developmentRoomToken")
@@ -244,11 +247,19 @@ struct InternetCallConfiguration: Equatable {
         var tokens = Self.storedAccessTokens(defaults)
         let token = accessToken.trimmingCharacters(in: .whitespacesAndNewlines)
         if token.isEmpty {
-            tokens.removeValue(forKey: target)
+            if previousOrigin == target {
+                tokens.removeValue(forKey: target)
+            }
         } else if !Self.tokenBelongsToAnotherOrigin(token, target: target, tokens: tokens, bundle: bundle) {
             tokens[target] = token
         }
         defaults.set(tokens, forKey: Self.accessTokensKey)
+    }
+
+    /// Authorization header value sent to the call service; nil when no
+    /// token is scoped to this configuration's origin.
+    var authorizationHeader: String? {
+        accessToken.isEmpty ? nil : "Bearer \(accessToken)"
     }
 
     var isDevelopmentDirect: Bool {

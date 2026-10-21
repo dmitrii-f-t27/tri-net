@@ -802,8 +802,8 @@ final class InternetCallAPI {
         request.setValue(proof.timestamp, forHTTPHeaderField: "X-TRINET-Timestamp")
         request.setValue(proof.nonce, forHTTPHeaderField: "X-TRINET-Nonce")
         request.setValue(proof.signature, forHTTPHeaderField: "X-TRINET-Signature")
-        if !configuration.accessToken.isEmpty {
-            request.setValue("Bearer \(configuration.accessToken)", forHTTPHeaderField: "Authorization")
+        if let authorization = configuration.authorizationHeader {
+            request.setValue(authorization, forHTTPHeaderField: "Authorization")
         }
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw InternetCallError.invalidResponse }
