@@ -119,8 +119,8 @@ struct InternetCallConfiguration: Equatable {
         let savedAPIBaseURL = defaults.string(forKey: "internetAPIBaseURL")
         // Bind a token saved before origins were recorded to the address it
         // was saved with, before that address may be rewritten below.
-        migrateLegacyAccessToken(defaults: defaults, savedAPIBaseURL: savedAPIBaseURL)
         let apiBaseURL = preferredAPIBaseURL(saved: savedAPIBaseURL, bundled: bundledAPIBaseURL)
+        migrateLegacyAccessToken(defaults: defaults, savedAPIBaseURL: apiBaseURL)
         if let savedAPIBaseURL,
            !savedAPIBaseURL.isEmpty,
            savedAPIBaseURL != apiBaseURL {
@@ -250,7 +250,7 @@ struct InternetCallConfiguration: Equatable {
             if previousOrigin == target {
                 tokens.removeValue(forKey: target)
             }
-        } else if !Self.tokenBelongsToAnotherOrigin(token, target: target, tokens: tokens, bundle: bundle) {
+        } else {
             tokens[target] = token
         }
         defaults.set(tokens, forKey: Self.accessTokensKey)
