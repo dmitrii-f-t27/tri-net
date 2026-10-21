@@ -156,14 +156,13 @@ struct InternetCallConfiguration: Equatable {
 
     /// Moves a single token saved by an older build into the per-origin store,
     /// bound to the origin recorded with it or else the address saved with it,
-    /// then removes the old keys. A token without any address stays where it
-    /// is and is never sent.
+    /// then removes the old keys. A token saved without any address is
+    /// deleted, never kept: an address recorded later must not adopt it.
     static func migrateLegacyAccessToken(defaults: UserDefaults, savedAPIBaseURL: String?) {
         guard let legacy = defaults.string(forKey: "serviceAccessToken") else { return }
         let legacyOrigin = defaults.string(forKey: "serviceAccessTokenOrigin")
             ?? origin(of: savedAPIBaseURL ?? "")
-        if !legacy.isEmpty {
-            guard let legacyOrigin else { return }
+        if !legacy.isEmpty, let legacyOrigin {
             var tokens = storedAccessTokens(defaults)
             if tokens[legacyOrigin] == nil {
                 tokens[legacyOrigin] = legacy
