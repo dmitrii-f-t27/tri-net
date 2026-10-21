@@ -229,7 +229,19 @@ enum IdentityStoreError: LocalizedError {
 final class DeviceIdentityStore {
     static let shared = DeviceIdentityStore()
 
-    private let service = "com.trinet.video.device-identity"
+    /// Keychain service of this app's device identity. An app that embeds
+    /// these shared files next to another TRI-NET client on the same Mac (the
+    /// TriOS macOS app) sets `TRINET_IDENTITY_KEYCHAIN_SERVICE` in its
+    /// Info.plist so it registers as its own device instead of reusing the
+    /// other client's signing key. Without the key the existing item is used.
+    static let defaultKeychainService = "com.trinet.video.device-identity"
+    private let service = DeviceIdentityStore.keychainService(bundle: .main)
+
+    static func keychainService(bundle: Bundle) -> String {
+        let configured = (bundle.object(forInfoDictionaryKey: "TRINET_IDENTITY_KEYCHAIN_SERVICE") as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return configured.isEmpty ? defaultKeychainService : configured
+    }
     private let identityAccount = "identity-v1"
     private let signingKeyAccount = "signing-key-v1"
     private let textEncryptionKeyAccount = "text-encryption-key-v1"
