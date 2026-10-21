@@ -1,0 +1,15 @@
+# Scratch negative control on dmitrii-f-t27/tri-net only (never part of a PR):
+# with the admission recheck removed, the stale-auth test must FAIL.
+name: negctl-413-stale-auth
+on:
+  push:
+    branches: [negctl/413-stale-auth]
+permissions:
+  contents: read
+jobs:
+  negative-control:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - run: cargo test --manifest-path services/call-api/Cargo.toml --locked stale_authentication_cannot_admit_a_call_after_revocation

@@ -3190,7 +3190,8 @@ fn admit_call(
 
     let mut database = lock_database(&state)?;
     let transaction = database.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    require_device_still_active(&transaction, &auth)?;
+    // NEGATIVE CONTROL: recheck removed
+
     let caller_name = transaction
         .query_row(
             "SELECT nickname FROM nicknames WHERE user_id = ?1",
