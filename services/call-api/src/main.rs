@@ -3165,7 +3165,17 @@ async fn create_call(
 ) -> Result<Response, ApiError> {
     let request: CreateCallRequest = decode_json(&body)?;
     let auth = authenticate(&state, &headers, "POST", "/v1/calls", &body, None)?;
-    require_identity(&auth, &request.caller_user_id, &request.caller_device_id)?;
+    admit_call(&state, &auth, &request)
+}
+
+/// Call admission after `authenticate`. `authenticate` releases its lock
+/// before this runs, so the transaction below rechecks the device (#413).
+fn admit_call(
+    state: &AppState,
+    auth: &AuthenticatedDevice,
+    request: &CreateCallRequest,
+) -> Result<Response, ApiError> {
+    require_identity(auth, &request.caller_user_id, &request.caller_device_id)?;
     if !internet_call::call_media_request_is_valid(request.audio, request.video, auth.capabilities)
     {
         return Err(ApiError::bad_request(
@@ -9075,27 +9085,52 @@ mod tests {
     }
     #[tokio::test]
     async fn stale_authentication_cannot_admit_a_call_after_revocation() {
-        // Deterministic interleaving: the request authenticated while the
-        // device was active (the AuthenticatedDevice below), then a
-        // revocation committed, then the handler opened its transaction.
+        // Deterministic interleaving through the real admission path: the
+        // request authenticated while the device was active (the
+        // AuthenticatedDevice below is exactly what authenticate() returned
+        // for it), then a revocation committed, then admit_call() ran.
         let state = test_state();
         let owner_phone = TestDevice::new("user_st_owner", "device_st_phone", "Owner iPhone");
         let owner_mac = TestDevice::new("user_st_temp", "device_st_mac", "Owner Mac");
+        let callee = TestDevice::new("user_st_callee", "device_st_callee", "Callee");
         register_device_with_nickname(&state, &owner_phone, "st_owner").await;
         link_second_device(&state, &owner_phone, &owner_mac).await;
+        register_device_with_nickname(&state, &callee, "st_callee").await;
         let authenticated_before_revocation = AuthenticatedDevice {
             user_id: owner_phone.user_id.clone(),
             device_id: owner_mac.device_id.clone(),
             display_name: owner_mac.display_name.clone(),
             signing_public_key: owner_mac.public_key.clone(),
             key_fingerprint: owner_mac.fingerprint.clone(),
-            capabilities: internet_call::CAP_AUDIO | internet_call::CAP_WEBRTC,
+            capabilities: capability_bits(&[
+                "audio".to_string(),
+                "video".to_string(),
+                "mesh".to_string(),
+                "webrtc".to_string(),
+            ]),
         };
-        {
-            let mut database = state.database.lock().unwrap();
-            let transaction = database.transaction().unwrap();
-            require_device_still_active(&transaction, &authenticated_before_revocation).unwrap();
-        }
+        let request = |client_call_id: &str| CreateCallRequest {
+            client_call_id: client_call_id.to_string(),
+            callee: "st_callee".to_string(),
+            caller_user_id: owner_phone.user_id.clone(),
+            caller_device_id: owner_mac.device_id.clone(),
+            audio: true,
+            video: false,
+        };
+        // Control: before the revocation the same value is admitted.
+        let admitted = admit_call(
+            &state,
+            &authenticated_before_revocation,
+            &request("10000000-0000-4000-8000-000000000415"),
+        )
+        .unwrap();
+        assert_eq!(admitted.status(), StatusCode::OK);
+        let calls_before = state
+            .database
+            .lock()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM calls", [], |row| row.get::<_, i64>(0))
+            .unwrap();
 
         let (status, _) = signed_post(
             application(state.clone()),
@@ -9106,12 +9141,25 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::NO_CONTENT);
 
-        let mut database = state.database.lock().unwrap();
-        let transaction = database.transaction().unwrap();
-        let error = require_device_still_active(&transaction, &authenticated_before_revocation)
-            .unwrap_err();
+        let error = admit_call(
+            &state,
+            &authenticated_before_revocation,
+            &request("10000000-0000-4000-8000-000000000416"),
+        )
+        .unwrap_err();
         assert_eq!(error.status, StatusCode::FORBIDDEN);
-        // A key that does not match the registered device is refused too.
+        let calls_after = state
+            .database
+            .lock()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM calls", [], |row| row.get::<_, i64>(0))
+            .unwrap();
+        assert_eq!(
+            calls_after, calls_before,
+            "no call row and no media session after revocation"
+        );
+
+        // The helper also refuses a key that does not match the device.
         let other_key = TestDevice::new("x", "y", "z");
         let mismatched = AuthenticatedDevice {
             signing_public_key: other_key.public_key.clone(),
@@ -9121,6 +9169,8 @@ mod tests {
             display_name: owner_phone.display_name.clone(),
             capabilities: internet_call::CAP_AUDIO | internet_call::CAP_WEBRTC,
         };
+        let mut database = state.database.lock().unwrap();
+        let transaction = database.transaction().unwrap();
         assert!(require_device_still_active(&transaction, &mismatched).is_err());
     }
 
