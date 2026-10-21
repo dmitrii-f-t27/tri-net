@@ -1021,9 +1021,10 @@ module InternetCall {
     invariant apns_voip_outbox_has_bounded_parallel_delivery
         assert APNS_VOIP_OUTBOX_WORKERS > 1 && APNS_VOIP_OUTBOX_WORKERS <= 16
 
+    // Stated at its boundaries: the parser has no `forall` clause and used to
+    // discard this invariant's body (19 tokens, t27c parse-complete).
     invariant voip_admission_never_exceeds_worker_capacity
-        forall pending_voip_events: u32
-        assert new_call_admission_is_allowed(0, 0, pending_voip_events, APNS_VOIP_OUTBOX_WORKERS + 1, true) == false
+        assert new_call_admission_is_allowed(0, 0, 0, APNS_VOIP_OUTBOX_WORKERS + 1, true) == false && new_call_admission_is_allowed(0, 0, APNS_VOIP_OUTBOX_WORKERS, 1, true) == false && new_call_admission_is_allowed(0, 0, APNS_VOIP_OUTBOX_WORKERS + 1, 0, true) == false && new_call_admission_is_allowed(0, 0, 0, APNS_VOIP_OUTBOX_WORKERS, true) == true
 
     invariant idempotent_call_retry_never_enqueues_another_voip_event
         assert voip_outbox_event_may_enqueue(CALL_RINGING, true, true, false) == false
