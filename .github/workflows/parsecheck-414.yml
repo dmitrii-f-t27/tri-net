@@ -1,0 +1,48 @@
+# Scratch on dmitrii-f-t27/tri-net only (never part of a PR): parse
+# completeness of specs/internet_call.t27 at base, old head and new head of
+# gHashTag/tri-net#414, with the pinned compiler and with t27 master.
+name: parsecheck-414
+on:
+  push:
+    branches: [parsecheck/414]
+permissions:
+  contents: read
+jobs:
+  parse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: tri-net, fetch-depth: 0 }
+      - uses: actions/checkout@v4
+        with: { repository: gHashTag/t27, ref: eb8b4208168557b36dca3a771f6901a5b10d9ef0, path: t27-pin }
+      - uses: actions/checkout@v4
+        with: { repository: gHashTag/t27, ref: aeb772f46b15116d45d1a1c8b7254c74d1510493, path: t27-master }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build both compilers
+        run: |
+          cargo build --release --manifest-path t27-pin/bootstrap/Cargo.toml --bin t27c
+          cargo build --release --manifest-path t27-master/bootstrap/Cargo.toml --bin t27c
+      - name: Parse checks
+        run: |
+          set +e
+          PIN=$(realpath t27-pin/target/release/t27c); MASTER=$(realpath t27-master/target/release/t27c)
+          mkdir -p out
+          { echo "pinned: eb8b4208 sha256 $(sha256sum $PIN | cut -c1-16)"; echo "master: aeb772f4 sha256 $(sha256sum $MASTER | cut -c1-16)"; $PIN --help | grep -i parse; echo; $MASTER --help | grep -i -E '^ +parse'; } > out/compilers.txt
+          for rev in d6deeb3 d606df0 37345a7; do
+            d=specs-$rev; mkdir -p $d
+            git -C tri-net show $rev:specs/internet_call.t27 > $d/internet_call.t27
+            {
+              echo "== $rev sha256 $(sha256sum $d/internet_call.t27 | cut -c1-64)"
+              $PIN parse $d/internet_call.t27 > /dev/null; echo "pinned parse exit=$?"
+              $PIN typecheck $d/internet_call.t27; echo "pinned typecheck exit=$?"
+              $MASTER parse-complete --specs-dir $d; echo "master parse-complete exit=$?"
+              $MASTER parse-complete --specs-dir $d --show $(realpath $d/internet_call.t27); echo "master show exit=$?"
+              $PIN gen-rust $d/internet_call.t27 > $d/internet_call.rs; echo "pinned gen-rust exit=$?"
+            } > out/$rev.txt 2>&1
+            cp $d/internet_call.rs out/$rev.internet_call.rs
+          done
+          git -C tri-net show 37345a7:gen/rust/internet_call.rs > out/committed-37345a7.rs
+          diff out/committed-37345a7.rs out/37345a7.internet_call.rs > out/gen-diff-37345a7.txt; echo "gen diff exit=$?" >> out/gen-diff-37345a7.txt
+          cat out/*.txt
+      - uses: actions/upload-artifact@v4
+        with: { name: parsecheck-414, path: out }
