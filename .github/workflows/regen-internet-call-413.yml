@@ -37,7 +37,8 @@ jobs:
           mkdir -p out
           "$T27C" parse specs/internet_call.t27 > /dev/null
           "$T27C" typecheck specs/internet_call.t27 | tee out/typecheck.txt
-          "$T27C" gen-rust specs/internet_call.t27 | rustfmt --edition 2021 > out/internet_call.rs
+          "$T27C" gen-rust specs/internet_call.t27 > out/internet_call.raw.rs
+          rustfmt --edition 2021 < out/internet_call.raw.rs > out/internet_call.rs
           "$T27C" gen specs/internet_call.t27 > out/internet_call.zig
           set +e
           zig test out/internet_call.zig -femit-bin=/tmp/ic_zig_test > out/zig-test.txt 2>&1
@@ -45,7 +46,7 @@ jobs:
           set -e
           cat out/zig-test.txt
           git -C ../t27 rev-parse HEAD > out/t27c-commit.txt
-          sha256sum "$T27C" specs/internet_call.t27 out/internet_call.rs out/internet_call.zig > out/SHA256SUMS
+          sha256sum "$T27C" specs/internet_call.t27 out/internet_call.raw.rs out/internet_call.rs out/internet_call.zig > out/SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:
           name: internet-call-regen-413
