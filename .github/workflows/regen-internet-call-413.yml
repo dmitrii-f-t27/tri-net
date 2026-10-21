@@ -1,0 +1,52 @@
+# Scratch workflow on dmitrii-f-t27/tri-net only (never part of a PR):
+# regenerate gen/rust/internet_call.rs with the compiler pinned in
+# spec-drift-guard.yml and execute the spec's own tests through Zig.
+name: regen-internet-call-413
+on:
+  push:
+    branches: [regen/internet-call-413]
+permissions:
+  contents: read
+jobs:
+  regen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tri-net
+      - uses: actions/checkout@v4
+        with:
+          repository: gHashTag/t27
+          ref: eb8b4208168557b36dca3a771f6901a5b10d9ef0
+          path: t27
+      - name: Install Zig (as spec-drift-guard)
+        run: |
+          curl -fsSL -o /tmp/zig.tar.xz https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz \
+            || curl -fsSL -o /tmp/zig.tar.xz https://ziglang.org/download/0.15.2/zig-linux-x86_64-0.15.2.tar.xz
+          mkdir -p "$HOME/zig" && tar -xJf /tmp/zig.tar.xz -C "$HOME/zig" --strip-components=1
+          echo "$HOME/zig" >> "$GITHUB_PATH"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build pinned t27c
+        working-directory: t27
+        run: cargo build --release --manifest-path bootstrap/Cargo.toml --bin t27c
+      - name: Regenerate and test internet_call
+        working-directory: tri-net
+        run: |
+          set -euo pipefail
+          T27C="$(realpath ../t27/target/release/t27c)"
+          mkdir -p out
+          "$T27C" parse specs/internet_call.t27 > /dev/null
+          "$T27C" typecheck specs/internet_call.t27 | tee out/typecheck.txt
+          "$T27C" gen-rust specs/internet_call.t27 | rustfmt --edition 2021 > out/internet_call.rs
+          "$T27C" gen specs/internet_call.t27 > out/internet_call.zig
+          set +e
+          zig test out/internet_call.zig -femit-bin=/tmp/ic_zig_test > out/zig-test.txt 2>&1
+          echo "zig test exit=$?" >> out/zig-test.txt
+          set -e
+          cat out/zig-test.txt
+          git -C ../t27 rev-parse HEAD > out/t27c-commit.txt
+          sha256sum "$T27C" specs/internet_call.t27 out/internet_call.rs out/internet_call.zig > out/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: internet-call-regen-413
+          path: tri-net/out
